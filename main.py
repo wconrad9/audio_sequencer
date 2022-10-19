@@ -5,11 +5,12 @@ from pathlib import Path
 from random import sample
 import sys
 import threading
+from turtle import width
 
 from playsound import playsound
 import pydub
 from pydub.playback import play
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QWidget
 
 from helpers import infinite_bpm_sequence
@@ -18,6 +19,11 @@ from helpers import infinite_bpm_sequence
 class Sequencer(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
+
+        self.brand_image = QtGui.QPixmap('./static/brand.png')
+        self.brand_image = self.brand_image.scaledToHeight(75)
+        self.brand_label = QtWidgets.QLabel()
+        self.brand_label.setPixmap(self.brand_image)
 
         self.sample_paths = self.load_samples()
 
@@ -44,6 +50,7 @@ class Sequencer(QtWidgets.QWidget):
 
 
         self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.addWidget(self.brand_label)
 
         self.control_layout = QtWidgets.QHBoxLayout(self)
         self.control_layout.addWidget(self.start_button)
@@ -88,7 +95,7 @@ class Sequencer(QtWidgets.QWidget):
             # create a generator to progressively generate BPM time values
             bpm_gen = infinite_bpm_sequence(self.bpm)
         
-            count = 1
+            count = 0
             while self.started:
                 next_sixteenth = datetime.timedelta(seconds=next(bpm_gen))
 
@@ -96,8 +103,6 @@ class Sequencer(QtWidgets.QWidget):
                     continue
                 
                 self.sample_slots[count % 16].activate_slot()
-                print(datetime.datetime.now() - now)
-                print(count)
                 count += 1
             
             return
