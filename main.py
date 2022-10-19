@@ -1,18 +1,25 @@
+import datetime
+import multiprocessing
+import os
+from pathlib import Path
+from random import sample
 import sys
 import threading
-import multiprocessing
-import datetime
 
-from PySide6 import QtCore, QtWidgets
-from PyQt6.QtWidgets import QWidget
 from playsound import playsound
 import pydub
 from pydub.playback import play
+from PySide6 import QtCore, QtWidgets
+from PyQt6.QtWidgets import QWidget
+
+from helpers import infinite_bpm_sequence
 
 
 class Sequencer(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
+
+        self.sample_paths = self.load_samples()
 
         self.bpm = 120.0
 
@@ -31,18 +38,11 @@ class Sequencer(QtWidgets.QWidget):
         self.sample_library = QtWidgets.QPushButton("Samp")
         self.sample_library.setFixedWidth(100)
 
-        # Sample Slots
-        # TODO: 16 sample slot elements...
-
         self.file = QtWidgets.QLabel("Filename", alignment=QtCore.Qt.AlignCenter)
         
         self.filepath = "/Users/walt/Desktop/turnmills.mp3"
-        """
-        self.vlayout = QtWidgets.QVBoxLayout(self)
 
-        # vertical layout creation
-        self.vlayout.addWidget(self.file)
-        """
+
         self.main_layout = QtWidgets.QVBoxLayout(self)
 
         self.control_layout = QtWidgets.QHBoxLayout(self)
@@ -53,35 +53,32 @@ class Sequencer(QtWidgets.QWidget):
 
         self.main_layout.addLayout(self.control_layout)
 
-        sample_slots = []
+        self.sample_slots: SampleSlot = []
         self.sample_slots_layout = QtWidgets.QHBoxLayout(self)
 
         for i in range(16):
-            current_slot = QtWidgets.QComboBox()
-            current_slot.setFixedWidth(75)
-            self.sample_slots_layout.addWidget(current_slot)
-            sample_slots.append(current_slot)
+            sample_slot = SampleSlot(i+1, QtWidgets.QComboBox())
+            sample_slot.dropdown.addItems(["None"] + [path.__str__()[5:-4] for path in self.sample_paths])
+            sample_slot.dropdown.setFixedWidth(75)
+            self.sample_slots_layout.addWidget(sample_slot.dropdown)
+
+            self.sample_slots.append(sample_slot)
 
         self.main_layout.addLayout(self.sample_slots_layout)
 
-        self.start_button.clicked.connect(self.start)
-        self.stop_button.clicked.connect(self.stop)
+        self.start_button.clicked.connect(self.start_clock)
+        self.stop_button.clicked.connect(self.stop_clock)
         self.bpm_input.returnPressed.connect(self.parse_bpm)
 
 
-    def infinite_bpm_sequence(self):
-        """Generate an infinite series of BPM time values."""
+    @QtCore.Slot()
+    def load_sample(self, index):
 
-        beat_time = 60/self.bpm
-        current_time = 0
-
-        while True:
-            current_time = current_time + beat_time
-            yield current_time
+        print(self.sample_slots[index].dropdown.currentText())
 
 
     @QtCore.Slot()
-    def start(self):
+    def start_clock(self):
         """Start the audio stream in the background."""
 
         def startAudioEngine(self):
@@ -89,15 +86,19 @@ class Sequencer(QtWidgets.QWidget):
             now = datetime.datetime.now()
 
             # create a generator to progressively generate BPM time values
-            bpm_gen = self.infinite_bpm_sequence()
+            bpm_gen = infinite_bpm_sequence(self.bpm)
         
+            count = 1
             while self.started:
-                next_beat = datetime.timedelta(seconds=next(bpm_gen))
+                next_sixteenth = datetime.timedelta(seconds=next(bpm_gen))
 
-                while datetime.datetime.now() - now < next_beat:
+                while datetime.datetime.now() - now < next_sixteenth:
                     continue
-
-                print(next_beat)
+                
+                self.sample_slots[count % 16].activate_slot()
+                print(datetime.datetime.now() - now)
+                print(count)
+                count += 1
             
             return
         
@@ -109,7 +110,7 @@ class Sequencer(QtWidgets.QWidget):
 
     
     @QtCore.Slot()
-    def stop(self):
+    def stop_clock(self):
         """Stop the audio stream."""
     
         self.started = False
@@ -141,12 +142,59 @@ class Sequencer(QtWidgets.QWidget):
         playsound(self.filepath, False)
         """
 
+    def load_samples(self):
+        """
+        Load built-in samples into audio sequencer.
+        returns: a list of built-in sample file paths
+        """
+
+        sample_dir = Path('./samp')
+        
+        return list(sample_dir.glob("*.wav"))
+
+
+class SampleSlot:
+
+    def __init__(self, id: int, dropdown: QtWidgets.QComboBox):
+        self.id = id
+        self.dropdown = dropdown
+        self.loaded = False
+        self.sample = None
+
+        self.dropdown.currentTextChanged.connect(self.load_sample)
+        
+    # connect to signal of QtComboBox selection
+    @QtCore.Slot()
+    def load_sample(self):
+        """Load sample file into a pydub AudioSegment."""
+
+        if self.dropdown.currentText() != "None":
+            self.sample = pydub.AudioSegment.from_file(f'./samp/{self.dropdown.currentText()}.wav')
+            self.loaded = True
+
+        else:
+            self.loaded = False
+        
+        return        
+
+
+    @QtCore.Slot()
+    def activate_slot(self):
+        """Play the loaded sample in a separate thread."""
+
+        if self.loaded:
+            t = threading.Thread(target=(play), args=(self.sample,))
+            t.start()
+        else:
+            return
+
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
 
     widget = Sequencer()
     widget.resize(1200, 400)
+    widget.setStyleSheet("background-color: #2e79db")
     widget.show()
 
     sys.exit(app.exec())
